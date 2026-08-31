@@ -77,7 +77,6 @@ const analysisWindow =
 const symbolName =
   document.getElementById("symbolName");
 
-
 /* ==========================================
    CONNECT
 ========================================== */
