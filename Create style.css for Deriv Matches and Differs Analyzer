@@ -1,0 +1,527 @@
+* {
+  box-sizing: border-box;
+}
+
+
+body {
+
+  margin: 0;
+
+  font-family: Arial, sans-serif;
+
+  background: #080b10;
+
+  color: #ffffff;
+
+}
+
+
+.app {
+
+  max-width: 1200px;
+
+  margin: auto;
+
+  padding: 15px;
+
+}
+
+
+header {
+
+  display: flex;
+
+  justify-content: space-between;
+
+  align-items: center;
+
+  padding: 20px;
+
+  background: #0d1117;
+
+  border: 1px solid #26313d;
+
+  margin-bottom: 15px;
+
+}
+
+
+h1 {
+
+  margin: 0;
+
+  font-size: 24px;
+
+}
+
+
+header p {
+
+  margin: 6px 0 0;
+
+  color: #8b949e;
+
+  font-size: 12px;
+
+}
+
+
+.status {
+
+  font-weight: bold;
+
+  font-size: 13px;
+
+}
+
+
+.connected {
+
+  color: #00e676;
+
+}
+
+
+.disconnected {
+
+  color: #ff5252;
+
+}
+
+
+.panel {
+
+  background: #0d1117;
+
+  border: 1px solid #26313d;
+
+  padding: 18px;
+
+  margin-bottom: 15px;
+
+}
+
+
+.panel h2 {
+
+  margin-top: 0;
+
+  font-size: 15px;
+
+}
+
+
+select {
+
+  width: 100%;
+
+  padding: 14px;
+
+  background: #161b22;
+
+  color: white;
+
+  border: 1px solid #30363d;
+
+  font-size: 15px;
+
+}
+
+
+.market-info {
+
+  display: grid;
+
+  grid-template-columns: repeat(3, 1fr);
+
+  gap: 10px;
+
+  margin-top: 15px;
+
+}
+
+
+.market-info div {
+
+  background: #161b22;
+
+  padding: 12px;
+
+}
+
+
+.market-info span {
+
+  display: block;
+
+  font-size: 10px;
+
+  color: #8b949e;
+
+}
+
+
+.market-info strong {
+
+  display: block;
+
+  margin-top: 6px;
+
+  font-size: 18px;
+
+}
+
+
+.ticks {
+
+  display: flex;
+
+  flex-wrap: wrap;
+
+  gap: 7px;
+
+  min-height: 50px;
+
+}
+
+
+.tick {
+
+  width: 38px;
+
+  height: 38px;
+
+  display: flex;
+
+  justify-content: center;
+
+  align-items: center;
+
+  background: #161b22;
+
+  border: 1px solid #30363d;
+
+  font-size: 18px;
+
+  font-weight: bold;
+
+}
+
+
+.description {
+
+  color: #8b949e;
+
+  font-size: 13px;
+
+}
+
+
+.analyze-button {
+
+  width: 100%;
+
+  padding: 18px;
+
+  margin-top: 15px;
+
+  border: none;
+
+  background: #00c853;
+
+  color: #000;
+
+  font-size: 15px;
+
+  font-weight: bold;
+
+  cursor: pointer;
+
+}
+
+
+.analyze-button:disabled {
+
+  opacity: 0.5;
+
+  cursor: not-allowed;
+
+}
+
+
+.progress-container {
+
+  margin-top: 20px;
+
+}
+
+
+.progress-bar {
+
+  height: 20px;
+
+  background: #161b22;
+
+  border: 1px solid #30363d;
+
+}
+
+
+.progress-fill {
+
+  width: 0%;
+
+  height: 100%;
+
+  background: #00e676;
+
+  transition: width 0.05s linear;
+
+}
+
+
+.progress-text {
+
+  text-align: center;
+
+  margin-top: 8px;
+
+  font-weight: bold;
+
+  color: #00e676;
+
+}
+
+
+.results-grid {
+
+  display: grid;
+
+  grid-template-columns: repeat(2, 1fr);
+
+  gap: 15px;
+
+  margin-bottom: 15px;
+
+}
+
+
+.result-card {
+
+  background: #0d1117;
+
+  padding: 20px;
+
+  border: 1px solid #26313d;
+
+}
+
+
+.matches {
+
+  border-top: 4px solid #00e676;
+
+}
+
+
+.differs {
+
+  border-top: 4px solid #ff9800;
+
+}
+
+
+.result-digit {
+
+  font-size: 100px;
+
+  font-weight: bold;
+
+  text-align: center;
+
+}
+
+
+.result-status {
+
+  text-align: center;
+
+  font-weight: bold;
+
+  margin-bottom: 15px;
+
+}
+
+
+.result-card p {
+
+  color: #a8b0b9;
+
+  min-height: 60px;
+
+  font-size: 13px;
+
+}
+
+
+.stats {
+
+  display: grid;
+
+  grid-template-columns: repeat(3, 1fr);
+
+  gap: 7px;
+
+}
+
+
+.stats div {
+
+  background: #161b22;
+
+  padding: 10px;
+
+}
+
+
+.stats span {
+
+  display: block;
+
+  font-size: 9px;
+
+  color: #8b949e;
+
+}
+
+
+.stats strong {
+
+  display: block;
+
+  margin-top: 5px;
+
+}
+
+
+.frequency-grid {
+
+  display: grid;
+
+  grid-template-columns: repeat(10, 1fr);
+
+  gap: 7px;
+
+}
+
+
+.frequency-box {
+
+  text-align: center;
+
+  background: #161b22;
+
+  border: 1px solid #30363d;
+
+  padding: 12px 5px;
+
+}
+
+
+.frequency-digit {
+
+  font-size: 22px;
+
+  font-weight: bold;
+
+}
+
+
+.frequency-count {
+
+  color: #8b949e;
+
+  font-size: 11px;
+
+}
+
+
+.quality {
+
+  display: grid;
+
+  grid-template-columns: repeat(3, 1fr);
+
+  gap: 10px;
+
+}
+
+
+.quality div {
+
+  background: #161b22;
+
+  padding: 12px;
+
+}
+
+
+.quality span {
+
+  display: block;
+
+  font-size: 10px;
+
+  color: #8b949e;
+
+}
+
+
+.quality strong {
+
+  display: block;
+
+  margin-top: 5px;
+
+}
+
+
+@media (max-width: 700px) {
+
+  header {
+
+    flex-direction: column;
+
+    align-items: flex-start;
+
+  }
+
+
+  .market-info {
+
+    grid-template-columns: 1fr;
+
+  }
+
+
+  .results-grid {
+
+    grid-template-columns: 1fr;
+
+  }
+
+
+  .frequency-grid {
+
+    grid-template-columns: repeat(5, 1fr);
+
+  }
+
+
+  .quality {
+
+    grid-template-columns: 1fr;
+
+  }
+
+}
