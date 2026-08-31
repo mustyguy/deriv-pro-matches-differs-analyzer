@@ -347,27 +347,18 @@ function processTick(tick) {
   */
 
 
-  const quote =
-    String(tick.quote);
+  const pipSize = Number.isInteger(tick.pip_size)
+  ? tick.pip_size
+  : 2;
 
+const formattedQuote =
+  Number(tick.quote).toFixed(pipSize);
 
-  const clean =
-    quote.replace(/\D/g, "");
+const clean =
+  formattedQuote.replace(/\D/g, "");
 
-
-  if (!clean.length) {
-
-    return;
-
-  }
-
-
-  const digit =
-    Number(
-      clean[
-        clean.length - 1
-      ]
-    );
+const digit =
+  Number(clean[clean.length - 1]);
 
 
   tickData.push({
