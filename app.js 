@@ -1,40 +1,56 @@
-/* ==========================================
+/* =========================================================
    DIGITS PRO ANALYZER
-   DERIV MATCHES & DIFFERS ONLY
+   MATCHES & DIFFERS ONLY
 
-   REAL LIVE TICKS
-   NO Math.random()
-   NO HARDCODED PREDICTION DIGITS
-
-   IMPORTANT:
-   Statistical analysis cannot guarantee
-   the next market digit.
-========================================== */
+   Public Deriv market-data connection
+   No API token required
+   No automatic trading
+   No random digit selection
+========================================================= */
 
 
-/* ==========================================
-   DERIV CONNECTION
-========================================== */
+/* =========================================================
+   WEBSOCKET CONNECTION
 
-const DERIV_WS =
-  "wss://ws.derivws.com/websockets/v3?app_id=1089";
+   We try reliable public WebSocket endpoints.
+========================================================= */
+
+const WS_ENDPOINTS = [
+
+  "wss://ws.binaryws.com/websockets/v3",
+
+  "wss://ws.derivws.com/websockets/v3?app_id=1089"
+
+];
+
 
 let ws = null;
 
+let endpointIndex = 0;
+
+let reconnectTimer = null;
+
+let reconnectAttempts = 0;
+
+
+/* =========================================================
+   MARKET + TICK STORAGE
+========================================================= */
+
 let activeSymbol = null;
+
+let activePipSize = null;
 
 let tickData = [];
 
 const MAX_TICKS = 1000;
 
-let reconnectTimer = null;
-
-let currentSubscriptionId = null;
+const HISTORY_TICKS = 500;
 
 
-/* ==========================================
+/* =========================================================
    DOM ELEMENTS
-========================================== */
+========================================================= */
 
 const marketSelect =
   document.getElementById("marketSelect");
@@ -73,9 +89,25 @@ const symbolName =
   document.getElementById("symbolName");
 
 
-/* ==========================================
+/* =========================================================
+   CONNECTION STATUS
+========================================================= */
+
+function setConnectionStatus(text, connected = false) {
+
+  connectionStatus.textContent = text;
+
+  connectionStatus.className =
+    connected
+      ? "status connected"
+      : "status disconnected";
+
+}
+
+
+/* =========================================================
    CONNECT TO DERIV
-========================================== */
+========================================================= */
 
 function connect() {
 
@@ -92,37 +124,71 @@ function connect() {
 
     } catch (error) {
 
-      console.error(error);
+      console.log("Old socket closed");
 
     }
 
   }
 
 
-  connectionStatus.textContent =
-    "● CONNECTING";
-
-  connectionStatus.className =
-    "status disconnected";
+  const endpoint =
+    WS_ENDPOINTS[endpointIndex];
 
 
-  ws = new WebSocket(DERIV_WS);
+  setConnectionStatus(
+    "● CONNECTING",
+    false
+  );
+
+
+  console.log(
+    "Connecting to:",
+    endpoint
+  );
+
+
+  try {
+
+    ws = new WebSocket(endpoint);
+
+  } catch (error) {
+
+    console.error(
+      "WebSocket creation error:",
+      error
+    );
+
+    tryNextEndpoint();
+
+    return;
+
+  }
 
 
   ws.onopen = () => {
 
-    connectionStatus.textContent =
-      "● CONNECTED";
-
-    connectionStatus.className =
-      "status connected";
-
-
-    ws.send(
-      JSON.stringify({
-        active_symbols: "brief"
-      })
+    console.log(
+      "Deriv WebSocket connected"
     );
+
+
+    reconnectAttempts = 0;
+
+
+    setConnectionStatus(
+      "● CONNECTED",
+      true
+    );
+
+
+    /*
+      Get all currently active markets.
+    */
+
+    sendRequest({
+      active_symbols: "brief",
+      req_id: 1001
+    });
 
   };
 
@@ -140,7 +206,7 @@ function connect() {
     } catch (error) {
 
       console.error(
-        "Invalid Deriv message",
+        "Invalid WebSocket message",
         error
       );
 
@@ -149,56 +215,81 @@ function connect() {
     }
 
 
+    /*
+      API ERROR
+    */
+
     if (data.error) {
 
       console.error(
-        "DERIV ERROR:",
+        "Deriv API error:",
         data.error.message
       );
 
-      progressText.textContent =
-        "DERIV ERROR: " +
-        data.error.message;
+
+      if (
+        data.error.message
+      ) {
+
+        progressText.textContent =
+          "API ERROR: " +
+          data.error.message;
+
+      }
+
 
       return;
 
     }
 
+
+    /*
+      ACTIVE SYMBOLS
+    */
 
     if (
       data.msg_type ===
       "active_symbols"
     ) {
 
-      loadVolatilityMarkets(
-        data.active_symbols
+      loadMarkets(
+        data.active_symbols || []
       );
 
       return;
 
     }
 
+
+    /*
+      TICK HISTORY
+    */
+
+    if (
+      data.msg_type === "history"
+    ) {
+
+      loadHistoricalTicks(
+        data.history
+      );
+
+      return;
+
+    }
+
+
+    /*
+      LIVE TICK
+    */
 
     if (
       data.msg_type === "tick" &&
       data.tick
     ) {
 
-      processTick(
+      processLiveTick(
         data.tick
       );
-
-      return;
-
-    }
-
-
-    if (
-      data.msg_type ===
-      "forget_all"
-    ) {
-
-      return;
 
     }
 
@@ -207,31 +298,39 @@ function connect() {
 
   ws.onerror = () => {
 
-    connectionStatus.textContent =
-      "● CONNECTION ERROR";
+    console.error(
+      "WebSocket connection error"
+    );
 
-    connectionStatus.className =
-      "status disconnected";
+
+    setConnectionStatus(
+      "● CONNECTION ERROR",
+      false
+    );
 
   };
 
 
   ws.onclose = () => {
 
-    connectionStatus.textContent =
-      "● RECONNECTING";
-
-    connectionStatus.className =
-      "status disconnected";
+    console.log(
+      "WebSocket closed"
+    );
 
 
-    clearTimeout(reconnectTimer);
+    setConnectionStatus(
+      "● RECONNECTING",
+      false
+    );
+
+
+    reconnectAttempts++;
 
 
     reconnectTimer =
       setTimeout(
-        connect,
-        3000
+        tryReconnect,
+        2500
       );
 
   };
@@ -239,112 +338,298 @@ function connect() {
 }
 
 
-connect();
+/* =========================================================
+   TRY NEXT ENDPOINT
+========================================================= */
+
+function tryNextEndpoint() {
+
+  endpointIndex =
+    (
+      endpointIndex + 1
+    ) %
+    WS_ENDPOINTS.length;
 
 
-/* ==========================================
-   LOAD REAL DERIV VOLATILITY MARKETS
-========================================== */
+  setTimeout(
+    connect,
+    1000
+  );
 
-function loadVolatilityMarkets(symbols) {
-
-  const volatilityMarkets =
-    symbols
-      .filter(market => {
-
-        const name =
-          String(
-            market.display_name || ""
-          ).toLowerCase();
+}
 
 
-        const symbol =
-          String(
-            market.symbol || ""
-          ).toLowerCase();
+/* =========================================================
+   RECONNECT
+========================================================= */
 
-
-        const text =
-          name + " " + symbol;
-
-
-        return (
-          text.includes("volatility")
-        );
-
-      })
-
-
-      .sort((a, b) => {
-
-        return a.display_name.localeCompare(
-          b.display_name
-        );
-
-      });
-
-
-  marketSelect.innerHTML = "";
-
+function tryReconnect() {
 
   if (
-    volatilityMarkets.length === 0
+    reconnectAttempts >= 3
   ) {
 
-    const option =
-      document.createElement("option");
+    endpointIndex =
+      (
+        endpointIndex + 1
+      ) %
+      WS_ENDPOINTS.length;
+
+  }
 
 
-    option.value = "";
+  connect();
 
-    option.textContent =
-      "No Volatility markets found";
+}
 
 
-    marketSelect.appendChild(option);
+/* =========================================================
+   SAFE SEND
+========================================================= */
 
+function sendRequest(request) {
+
+  if (
+    !ws ||
+    ws.readyState !== WebSocket.OPEN
+  ) {
+
+    console.warn(
+      "WebSocket not ready"
+    );
+
+    return false;
+
+  }
+
+
+  ws.send(
+    JSON.stringify(request)
+  );
+
+
+  return true;
+
+}
+
+
+/* =========================================================
+   LOAD VOLATILITY MARKETS
+
+   Supports both older and newer
+   Deriv active_symbols field names.
+========================================================= */
+
+function loadMarkets(symbols) {
+
+  if (!symbols.length) {
+
+    marketSelect.innerHTML =
+      `<option value="">
+        No markets received
+      </option>`;
 
     progressText.textContent =
-      "NO VOLATILITY MARKETS RECEIVED";
+      "NO MARKETS RECEIVED";
 
     return;
 
   }
 
 
-  volatilityMarkets.forEach(
-    market => {
+  const markets = symbols
+    .map(item => {
 
-      const option =
-        document.createElement("option");
-
-
-      option.value =
-        market.symbol;
+      const symbol =
+        item.symbol ||
+        item.underlying_symbol ||
+        "";
 
 
-      option.textContent =
-        market.display_name;
+      const name =
+        item.display_name ||
+        item.underlying_symbol_name ||
+        symbol;
 
 
-      marketSelect.appendChild(
-        option
+      const pipSize =
+        item.pip ??
+        item.pip_size ??
+        null;
+
+
+      const market =
+        item.market ||
+        "";
+
+
+      return {
+
+        symbol,
+        name,
+        pipSize,
+        market
+
+      };
+
+    })
+
+
+    /*
+      Only Volatility / Volatility 1s
+      synthetic markets.
+    */
+
+    .filter(item => {
+
+      const text =
+        (
+          item.name +
+          " " +
+          item.symbol +
+          " " +
+          item.market
+        ).toLowerCase();
+
+
+      return (
+        text.includes("volatility") ||
+        /^1hz/i.test(item.symbol) ||
+        /^rz/i.test(item.symbol)
       );
 
-    }
-  );
+    })
+
+
+    /*
+      Remove invalid/empty entries.
+    */
+
+    .filter(item =>
+      item.symbol
+    )
+
+
+    /*
+      Remove duplicates.
+    */
+
+    .filter(
+      (
+        item,
+        index,
+        array
+      ) =>
+
+        index ===
+        array.findIndex(
+          x =>
+            x.symbol ===
+            item.symbol
+        )
+    )
+
+
+    /*
+      Alphabetical order.
+    */
+
+    .sort(
+      (a, b) =>
+        a.name.localeCompare(
+          b.name
+        )
+    );
+
+
+  if (!markets.length) {
+
+    console.warn(
+      "No volatility markets found",
+      symbols
+    );
+
+
+    marketSelect.innerHTML =
+      `<option value="">
+        No Volatility markets found
+      </option>`;
+
+
+    progressText.textContent =
+      "MARKET LIST ERROR";
+
+
+    return;
+
+  }
+
+
+  marketSelect.innerHTML = "";
+
+
+  markets.forEach(market => {
+
+    const option =
+      document.createElement(
+        "option"
+      );
+
+
+    option.value =
+      market.symbol;
+
+
+    option.textContent =
+      market.name;
+
+
+    option.dataset.pipSize =
+      market.pipSize ?? "";
+
+
+    marketSelect.appendChild(
+      option
+    );
+
+  });
+
+
+  /*
+    Select first available market.
+  */
+
+  const first =
+    markets[0];
 
 
   activeSymbol =
-    volatilityMarkets[0].symbol;
+    first.symbol;
 
 
-  marketSelect.value =
-    activeSymbol;
+  activePipSize =
+    first.pipSize;
 
 
   symbolName.textContent =
     activeSymbol;
+
+
+  console.log(
+    "Markets loaded:",
+    markets.length
+  );
+
+
+  /*
+    Get history immediately,
+    then subscribe to live ticks.
+  */
+
+  resetMarketData();
+
+
+  requestHistoricalTicks();
 
 
   subscribeToTicks();
@@ -352,50 +637,40 @@ function loadVolatilityMarkets(symbols) {
 }
 
 
-/* ==========================================
-   CHANGE MARKET
-
-   Old market data is deleted so that
-   different volatility indices are never mixed.
-========================================== */
+/* =========================================================
+   MARKET CHANGE
+========================================================= */
 
 marketSelect.addEventListener(
   "change",
   () => {
 
+    const option =
+      marketSelect.options[
+        marketSelect.selectedIndex
+      ];
+
+
     activeSymbol =
-      marketSelect.value;
+      option.value;
 
 
-    if (!activeSymbol) {
-
-      return;
-
-    }
+    activePipSize =
+      option.dataset.pipSize
+        ? Number(
+            option.dataset.pipSize
+          )
+        : null;
 
 
     symbolName.textContent =
       activeSymbol;
 
 
-    tickData = [];
+    resetMarketData();
 
 
-    currentSubscriptionId = null;
-
-
-    resetResults();
-
-
-    updateDashboard();
-
-
-    progressFill.style.width =
-      "0%";
-
-
-    progressText.textContent =
-      "COLLECTING NEW MARKET DATA";
+    requestHistoricalTicks();
 
 
     subscribeToTicks();
@@ -404,92 +679,171 @@ marketSelect.addEventListener(
 );
 
 
-/* ==========================================
-   SUBSCRIBE TO LIVE TICKS
-========================================== */
+/* =========================================================
+   RESET MARKET DATA
+========================================================= */
 
-function subscribeToTicks() {
+function resetMarketData() {
 
-  if (
-    !ws ||
-    ws.readyState !==
-      WebSocket.OPEN ||
-    !activeSymbol
-  ) {
+  tickData = [];
+
+
+  latestDigit.textContent =
+    "-";
+
+
+  tickCount.textContent =
+    "0";
+
+
+  analysisWindow.textContent =
+    "0 TICKS";
+
+
+  ticksElement.textContent =
+    "Loading market ticks...";
+
+
+  frequencyGrid.innerHTML =
+    "";
+
+
+  dataQuality.textContent =
+    "COLLECTING";
+
+
+  resetResults();
+
+}
+
+
+/* =========================================================
+   REQUEST HISTORICAL TICKS
+
+   This means the analyzer does not
+   have to wait a long time before
+   collecting useful data.
+========================================================= */
+
+function requestHistoricalTicks() {
+
+  if (!activeSymbol) {
 
     return;
 
   }
 
 
-  ws.send(
-    JSON.stringify({
-      forget_all: "ticks"
-    })
-  );
+  sendRequest({
 
+    ticks_history:
+      activeSymbol,
 
-  setTimeout(() => {
+    count:
+      HISTORY_TICKS,
 
-    if (
-      !ws ||
-      ws.readyState !==
-        WebSocket.OPEN
-    ) {
+    end:
+      "latest",
 
-      return;
+    style:
+      "ticks",
 
-    }
+    req_id:
+      2001
 
-
-    ws.send(
-      JSON.stringify({
-        ticks: activeSymbol,
-        subscribe: 1
-      })
-    );
-
-  }, 500);
+  });
 
 }
 
 
-/* ==========================================
-   GET THE CORRECT LAST DIGIT
+/* =========================================================
+   SUBSCRIBE TO LIVE TICKS
+========================================================= */
 
-   IMPORTANT:
+function subscribeToTicks() {
 
-   Using String(tick.quote) alone can remove
-   trailing decimal zeros.
+  if (!activeSymbol) {
 
-   pip_size is used to preserve the displayed
-   quote precision before extracting the digit.
-========================================== */
+    return;
 
-function getLastDigit(tick) {
-
-  const quote =
-    Number(tick.quote);
+  }
 
 
-  const pipSize =
-    Number.isInteger(tick.pip_size)
-      ? tick.pip_size
-      : 2;
+  sendRequest({
+
+    ticks:
+      activeSymbol,
+
+    subscribe:
+      1,
+
+    req_id:
+      2002
+
+  });
+
+}
 
 
-  const formattedQuote =
-    quote.toFixed(pipSize);
+/* =========================================================
+   EXTRACT CORRECT LAST DIGIT
+
+   Uses pip size when available so
+   decimal trailing digits are handled
+   more reliably.
+========================================================= */
+
+function extractLastDigit(
+  quote,
+  pipSize = activePipSize
+) {
+
+  if (
+    quote === null ||
+    quote === undefined
+  ) {
+
+    return null;
+
+  }
 
 
-  const digitsOnly =
-    formattedQuote.replace(
+  let quoteString;
+
+
+  if (
+    Number.isFinite(
+      Number(pipSize)
+    )
+  ) {
+
+    const decimals =
+      Number(pipSize);
+
+
+    quoteString =
+      Number(quote).toFixed(
+        decimals
+      );
+
+  }
+
+  else {
+
+    quoteString =
+      String(quote);
+
+  }
+
+
+  const digits =
+    quoteString.replace(
       /\D/g,
       ""
     );
 
 
-  if (!digitsOnly.length) {
+  if (!digits.length) {
 
     return null;
 
@@ -497,28 +851,183 @@ function getLastDigit(tick) {
 
 
   return Number(
-    digitsOnly[
-      digitsOnly.length - 1
+    digits[
+      digits.length - 1
     ]
   );
 
 }
 
 
-/* ==========================================
-   PROCESS LIVE TICK
-========================================== */
+/* =========================================================
+   LOAD HISTORICAL DATA
+========================================================= */
 
-function processTick(tick) {
+function loadHistoricalTicks(history) {
+
+  if (!history) {
+
+    return;
+
+  }
+
+
+  /*
+    Different API versions can return
+    arrays in different forms.
+  */
+
+  const prices =
+    history.prices ||
+    history.quotes ||
+    [];
+
+
+  const times =
+    history.times ||
+    [];
+
+
+  if (!prices.length) {
+
+    return;
+
+  }
+
+
+  tickData = [];
+
+
+  prices.forEach(
+    (price, index) => {
+
+      const digit =
+        extractLastDigit(
+          price
+        );
+
+
+      if (
+        digit === null
+      ) {
+
+        return;
+
+      }
+
+
+      tickData.push({
+
+        digit,
+
+        quote:
+          price,
+
+        epoch:
+          times[index] ||
+          Date.now()
+
+      });
+
+    }
+  );
+
+
+  /*
+    Keep maximum storage.
+  */
+
+  if (
+    tickData.length >
+    MAX_TICKS
+  ) {
+
+    tickData =
+      tickData.slice(
+        -MAX_TICKS
+      );
+
+  }
+
+
+  updateDashboard();
+
+
+  console.log(
+    "Historical ticks loaded:",
+    tickData.length
+  );
+
+}
+
+
+/* =========================================================
+   PROCESS LIVE TICK
+========================================================= */
+
+function processLiveTick(tick) {
+
+  /*
+    Ignore ticks from another market.
+  */
+
+  if (
+    activeSymbol &&
+    tick.symbol &&
+    tick.symbol !== activeSymbol
+  ) {
+
+    return;
+
+  }
+
+
+  /*
+    Update pip size if Deriv supplies it.
+  */
+
+  if (
+    tick.pip_size !== undefined
+  ) {
+
+    activePipSize =
+      Number(
+        tick.pip_size
+      );
+
+  }
+
 
   const digit =
-    getLastDigit(tick);
+    extractLastDigit(
+      tick.quote,
+      activePipSize
+    );
 
 
   if (
-    digit === null ||
-    digit < 0 ||
-    digit > 9
+    digit === null
+  ) {
+
+    return;
+
+  }
+
+
+  /*
+    Avoid accidental duplicate tick.
+  */
+
+  const last =
+    tickData[
+      tickData.length - 1
+    ];
+
+
+  if (
+    last &&
+    last.epoch === tick.epoch &&
+    last.quote === tick.quote
   ) {
 
     return;
@@ -528,13 +1037,13 @@ function processTick(tick) {
 
   tickData.push({
 
-    digit: digit,
+    digit,
 
-    epoch: tick.epoch,
+    quote:
+      tick.quote,
 
-    quote: tick.quote,
-
-    pip_size: tick.pip_size
+    epoch:
+      tick.epoch
 
   });
 
@@ -554,9 +1063,9 @@ function processTick(tick) {
 }
 
 
-/* ==========================================
+/* =========================================================
    UPDATE DASHBOARD
-========================================== */
+========================================================= */
 
 function updateDashboard() {
 
@@ -569,18 +1078,13 @@ function updateDashboard() {
 
 
   if (
-    tickData.length > 0
+    tickData.length
   ) {
 
     latestDigit.textContent =
       tickData[
         tickData.length - 1
       ].digit;
-
-  } else {
-
-    latestDigit.textContent =
-      "-";
 
   }
 
@@ -594,15 +1098,13 @@ function updateDashboard() {
 }
 
 
-/* ==========================================
-   DISPLAY LATEST LIVE DIGITS
-========================================== */
+/* =========================================================
+   LIVE DIGIT DISPLAY
+========================================================= */
 
 function updateTicks() {
 
-  if (
-    tickData.length === 0
-  ) {
+  if (!tickData.length) {
 
     ticksElement.textContent =
       "Waiting for live ticks...";
@@ -619,22 +1121,20 @@ function updateTicks() {
 
 
   ticksElement.innerHTML =
-    latest.map(item => {
+    latest.map(item =>
 
-      return `
-        <div class="tick">
-          ${item.digit}
-        </div>
-      `;
+      `<div class="tick">
+        ${item.digit}
+      </div>`
 
-    }).join("");
+    ).join("");
 
 }
 
 
-/* ==========================================
-   COUNT DIGITS
-========================================== */
+/* =========================================================
+   FREQUENCY COUNTS
+========================================================= */
 
 function getCounts(data) {
 
@@ -661,10 +1161,6 @@ function getCounts(data) {
 }
 
 
-/* ==========================================
-   DISPLAY FREQUENCY
-========================================== */
-
 function updateFrequency() {
 
   const counts =
@@ -673,31 +1169,28 @@ function updateFrequency() {
 
   frequencyGrid.innerHTML =
     counts.map(
-      (count, digit) => {
+      (count, digit) =>
 
-        return `
-          <div class="frequency-box">
+        `<div class="frequency-box">
 
-            <div class="frequency-digit">
-              ${digit}
-            </div>
-
-            <div class="frequency-count">
-              ${count} TIMES
-            </div>
-
+          <div class="frequency-digit">
+            ${digit}
           </div>
-        `;
 
-      }
+          <div class="frequency-count">
+            ${count} TIMES
+          </div>
+
+        </div>`
+
     ).join("");
 
 }
 
 
-/* ==========================================
+/* =========================================================
    DATA QUALITY
-========================================== */
+========================================================= */
 
 function updateQuality() {
 
@@ -705,14 +1198,14 @@ function updateQuality() {
     tickData.length;
 
 
-  if (total < 30) {
+  if (total < 50) {
 
     dataQuality.textContent =
       "LOW";
 
   }
 
-  else if (total < 100) {
+  else if (total < 150) {
 
     dataQuality.textContent =
       "BUILDING";
@@ -726,26 +1219,19 @@ function updateQuality() {
 
   }
 
-  else if (total < 500) {
+  else {
 
     dataQuality.textContent =
       "HIGH";
 
   }
 
-  else {
-
-    dataQuality.textContent =
-      "VERY HIGH";
-
-  }
-
 }
 
 
-/* ==========================================
+/* =========================================================
    ANALYZE BUTTON
-========================================== */
+========================================================= */
 
 analyzeButton.addEventListener(
   "click",
@@ -753,20 +1239,17 @@ analyzeButton.addEventListener(
 );
 
 
-/* ==========================================
+/* =========================================================
    ANALYSIS PROGRESS
-   UNDER 5 SECONDS
-========================================== */
+
+   1% to 100% in under 5 seconds.
+========================================================= */
 
 function startAnalysis() {
 
   if (
     tickData.length < 50
   ) {
-
-    progressFill.style.width =
-      "0%";
-
 
     progressText.textContent =
       `NEED MORE DATA: ${tickData.length}/50 TICKS`;
@@ -787,21 +1270,10 @@ function startAnalysis() {
     "0%";
 
 
-  progressText.textContent =
-    "ANALYZING REAL LIVE DATA... 0%";
-
-
   const timer =
     setInterval(() => {
 
-      progress += 2;
-
-
-      if (progress > 100) {
-
-        progress = 100;
-
-      }
+      progress++;
 
 
       progressFill.style.width =
@@ -809,12 +1281,16 @@ function startAnalysis() {
 
 
       progressText.textContent =
-        `ANALYZING REAL LIVE DATA... ${progress}%`;
+        `ANALYZING LIVE DATA... ${progress}%`;
 
 
-      if (progress >= 100) {
+      if (
+        progress >= 100
+      ) {
 
-        clearInterval(timer);
+        clearInterval(
+          timer
+        );
 
 
         runStatisticalAnalysis();
@@ -829,35 +1305,25 @@ function startAnalysis() {
 
       }
 
-    }, 45);
+    }, 40);
 
 }
 
 
-/* ==========================================
-   GET WINDOW
-========================================== */
+/* =========================================================
+   FREQUENCY IN WINDOW
+========================================================= */
 
-function getWindow(size) {
-
-  return tickData.slice(-size);
-
-}
-
-
-/* ==========================================
-   FREQUENCY OF A DIGIT
-========================================== */
-
-function frequency(digit, size) {
+function frequency(
+  digit,
+  size
+) {
 
   const window =
-    getWindow(size);
+    tickData.slice(-size);
 
 
-  if (
-    window.length === 0
-  ) {
+  if (!window.length) {
 
     return 0;
 
@@ -877,36 +1343,16 @@ function frequency(digit, size) {
 }
 
 
-/* ==========================================
-   RAW COUNT IN WINDOW
-========================================== */
-
-function windowCount(
-  digit,
-  size
-) {
-
-  const window =
-    getWindow(size);
-
-
-  return window.filter(
-    item =>
-      item.digit === digit
-  ).length;
-
-}
-
-
-/* ==========================================
+/* =========================================================
    TRANSITION PROBABILITY
 
-   Example:
+   Based on the CURRENT last digit.
 
-   If latest digit is 7,
-   this checks historically what digit
-   followed 7.
-========================================== */
+   Example:
+   If current digit is 7,
+   calculate historically how often
+   7 was followed by target digit.
+========================================================= */
 
 function transitionProbability(
   targetDigit
@@ -916,7 +1362,7 @@ function transitionProbability(
     tickData.length < 20
   ) {
 
-    return 0;
+    return 0.1;
 
   }
 
@@ -934,10 +1380,7 @@ function transitionProbability(
 
   for (
     let i = 0;
-
-    i <
-    tickData.length - 1;
-
+    i < tickData.length - 1;
     i++
   ) {
 
@@ -963,82 +1406,63 @@ function transitionProbability(
   }
 
 
-  if (
-    previousCount === 0
-  ) {
-
-    return 0;
-
-  }
-
+  /*
+    Laplace smoothing.
+    Prevents false 0% or 100%
+    from tiny samples.
+  */
 
   return (
-    targetCount /
-    previousCount
+    targetCount + 1
+  ) /
+  (
+    previousCount + 10
   );
 
 }
 
 
-/* ==========================================
-   RECENCY SCORE
+/* =========================================================
+   DROUGHT
+========================================================= */
 
-   Gives more weight to appearances
-   closer to the latest tick.
-========================================== */
+function drought(digit) {
 
-function recencyScore(digit) {
-
-  const window =
-    tickData.slice(-50);
+  let count = 0;
 
 
-  if (
-    window.length === 0
+  for (
+    let i =
+      tickData.length - 1;
+
+    i >= 0;
+
+    i--
   ) {
 
-    return 0;
+    if (
+      tickData[i].digit ===
+      digit
+    ) {
+
+      break;
+
+    }
+
+
+    count++;
 
   }
 
 
-  let score = 0;
-
-  let maxScore = 0;
-
-
-  window.forEach(
-    (item, index) => {
-
-      const weight =
-        index + 1;
-
-
-      maxScore +=
-        weight;
-
-
-      if (
-        item.digit === digit
-      ) {
-
-        score +=
-          weight;
-
-      }
-
-    }
-  );
-
-
-  return score / maxScore;
+  return count;
 
 }
 
 
-/* ==========================================
-   APPEARANCES IN FULL DATASET
-========================================== */
+/* =========================================================
+   TOTAL APPEARANCES
+========================================================= */
 
 function appearances(digit) {
 
@@ -1050,31 +1474,236 @@ function appearances(digit) {
 }
 
 
-/* ==========================================
+/* =========================================================
+   RECENT MOMENTUM
+
+   Compares recent 50 ticks against
+   a longer window.
+========================================================= */
+
+function recentMomentum(
+  digit
+) {
+
+  const recent =
+    frequency(digit, 50);
+
+
+  const longer =
+    frequency(digit, 300);
+
+
+  return (
+    recent -
+    longer
+  );
+
+}
+
+
+/* =========================================================
+   NEXT-10 HISTORICAL REPEAT TEST
+
+   Your requested concept:
+
+   When a digit appeared historically,
+   examine the NEXT 10 ticks.
+
+   Calculate how often that digit
+   appeared at least 3 times in those
+   following 10 ticks.
+
+   This is a historical statistic,
+   NOT a guarantee of future ticks.
+========================================================= */
+
+function nextTenRepeatRate(
+  digit
+) {
+
+  let samples = 0;
+
+  let successful = 0;
+
+
+  const start =
+    Math.max(
+      0,
+      tickData.length - 500
+    );
+
+
+  for (
+    let i = start;
+    i < tickData.length - 10;
+    i++
+  ) {
+
+    if (
+      tickData[i].digit !== digit
+    ) {
+
+      continue;
+
+    }
+
+
+    samples++;
+
+
+    let repeatCount = 0;
+
+
+    for (
+      let j = i + 1;
+      j <= i + 10;
+      j++
+    ) {
+
+      if (
+        tickData[j].digit === digit
+      ) {
+
+        repeatCount++;
+
+      }
+
+    }
+
+
+    /*
+      Your 3–4 appearances concept:
+      count 3 or more appearances.
+    */
+
+    if (
+      repeatCount >= 3
+    ) {
+
+      successful++;
+
+    }
+
+  }
+
+
+  /*
+    Smoothed rate.
+  */
+
+  if (
+    samples < 5
+  ) {
+
+    return 0;
+
+  }
+
+
+  return (
+    successful + 1
+  ) /
+  (
+    samples + 2
+  );
+
+}
+
+
+/* =========================================================
+   NEXT-10 AVOIDANCE RATE
+
+   For DIFFERS:
+
+   How often was this digit absent
+   from the following 10 ticks after
+   historical observations?
+========================================================= */
+
+function nextTenAvoidanceRate(
+  digit
+) {
+
+  let samples = 0;
+
+  let avoided = 0;
+
+
+  const start =
+    Math.max(
+      0,
+      tickData.length - 500
+    );
+
+
+  for (
+    let i = start;
+    i < tickData.length - 10;
+    i++
+  ) {
+
+    samples++;
+
+
+    let appeared =
+      false;
+
+
+    for (
+      let j = i + 1;
+      j <= i + 10;
+      j++
+    ) {
+
+      if (
+        tickData[j].digit === digit
+      ) {
+
+        appeared =
+          true;
+
+        break;
+
+      }
+
+    }
+
+
+    if (!appeared) {
+
+      avoided++;
+
+    }
+
+  }
+
+
+  if (
+    samples < 10
+  ) {
+
+    return 0;
+
+  }
+
+
+  return (
+    avoided + 1
+  ) /
+  (
+    samples + 2
+  );
+
+}
+
+
+/* =========================================================
    ANALYZE ONE DIGIT
-========================================== */
+========================================================= */
 
-function analyzeDigit(digit) {
-
-  const count10 =
-    windowCount(digit, 10);
-
-
-  const count20 =
-    windowCount(digit, 20);
-
-
-  const count50 =
-    windowCount(digit, 50);
-
-
-  const f10 =
-    frequency(digit, 10);
-
-
-  const f20 =
-    frequency(digit, 20);
-
+function analyzeDigit(
+  digit
+) {
 
   const f50 =
     frequency(digit, 50);
@@ -1098,134 +1727,110 @@ function analyzeDigit(digit) {
     );
 
 
-  const recent =
-    recencyScore(
-      digit
-    );
+  const droughtValue =
+    drought(digit);
 
 
   const totalAppearances =
-    appearances(
+    appearances(digit);
+
+
+  const momentum =
+    recentMomentum(
+      digit
+    );
+
+
+  const repeatRate =
+    nextTenRepeatRate(
+      digit
+    );
+
+
+  const avoidanceRate =
+    nextTenAvoidanceRate(
       digit
     );
 
 
   /*
-     MULTI-WINDOW FREQUENCY
-
-     Recent windows receive
-     higher importance.
+    MULTI-WINDOW FREQUENCY
   */
 
   const averageFrequency =
-    (
-      f10 * 0.30 +
-      f20 * 0.20 +
-      f50 * 0.20 +
-      f100 * 0.15 +
-      f250 * 0.10 +
-      f500 * 0.05
-    );
+
+    f50 * 0.40 +
+
+    f100 * 0.25 +
+
+    f250 * 0.20 +
+
+    f500 * 0.15;
 
 
   /*
-     MATCH SCORE
+    MATCH SCORE
 
-     Priorities:
+    Factors:
 
-     1. Recent frequency
-     2. Recent appearances
-     3. Transition behavior
-     4. Recency weighting
+    - Recent frequency
+    - Multi-window frequency
+    - Current transition behaviour
+    - Recent momentum
+    - Historical next-10 repeat behaviour
 
-     NO RANDOM SELECTION.
+    No Math.random().
   */
 
-  const matchScore =
-    (
-      averageFrequency * 0.45
-    ) +
-
-    (
-      transition * 0.25
-    ) +
-
-    (
-      recent * 0.20
-    ) +
-
-    (
+  const normalizedMomentum =
+    Math.max(
+      0,
       Math.min(
-        count10 / 4,
+        (momentum + 0.10) / 0.20,
         1
-      ) * 0.10
+      )
     );
 
 
+  const matchScore =
+
+    averageFrequency * 0.30 +
+
+    transition * 0.25 +
+
+    normalizedMomentum * 0.15 +
+
+    repeatRate * 0.30;
+
+
   /*
-     DIFFERS SCORE
+    DIFFERS SCORE
 
-     A stronger candidate is a digit
-     with relatively LOW observed
-     frequency and LOW transition
-     probability.
+    Factors favour:
 
-     Long drought is NOT treated as
-     proof that a digit will continue
-     avoiding, because that would create
-     a gambler's-fallacy assumption.
+    - Lower recent frequency
+    - Lower transition probability
+    - Historical next-10 avoidance
   */
 
   const differsScore =
-    (
-      (1 - Math.min(
-        f10 * 10,
-        1
-      )) * 0.30
-    ) +
 
-    (
-      (1 - Math.min(
-        f20 * 10,
-        1
-      )) * 0.20
-    ) +
+    (1 - Math.min(
+      averageFrequency * 5,
+      1
+    )) * 0.35 +
 
-    (
-      (1 - Math.min(
-        f50 * 10,
-        1
-      )) * 0.20
-    ) +
+    (1 - Math.min(
+      transition * 5,
+      1
+    )) * 0.30 +
 
-    (
-      (1 - Math.min(
-        transition * 10,
-        1
-      )) * 0.20
-    ) +
-
-    (
-      (1 - Math.min(
-        recent * 10,
-        1
-      )) * 0.10
-    );
+    avoidanceRate * 0.35;
 
 
   return {
 
     digit,
-
-    count10,
-
-    count20,
-
-    count50,
-
-    f10,
-
-    f20,
 
     f50,
 
@@ -1237,10 +1842,17 @@ function analyzeDigit(digit) {
 
     transition,
 
-    recent,
+    drought:
+      droughtValue,
 
     appearances:
       totalAppearances,
+
+    momentum,
+
+    repeatRate,
+
+    avoidanceRate,
 
     matchScore,
 
@@ -1251,9 +1863,9 @@ function analyzeDigit(digit) {
 }
 
 
-/* ==========================================
+/* =========================================================
    MAIN ANALYSIS ENGINE
-========================================== */
+========================================================= */
 
 function runStatisticalAnalysis() {
 
@@ -1262,151 +1874,60 @@ function runStatisticalAnalysis() {
 
   for (
     let digit = 0;
-
     digit <= 9;
-
     digit++
   ) {
 
     results.push(
-      analyzeDigit(digit)
+      analyzeDigit(
+        digit
+      )
     );
 
   }
 
 
   /*
-     MATCHES SELECTION
+    MATCHES
 
-     YOUR PREFERENCE:
-
-     Give priority to digits that
-     appeared repeatedly in the
-     most recent ticks.
-
-     Priority 1:
-     Appeared 3 or more times
-     in the latest 10 ticks.
-
-     Priority 2:
-     Appeared 2 or more times
-     in latest 10 ticks.
-
-     Priority 3:
-     Best statistical candidate.
+    Prefer digits with meaningful
+    historical appearances.
   */
 
-  let matchesCandidates =
+  const validMatches =
     results.filter(
       item =>
-        item.count10 >= 3
+        item.appearances >= 4
     );
 
 
-  if (
-    matchesCandidates.length === 0
-  ) {
-
-    matchesCandidates =
-      results.filter(
-        item =>
-          item.count10 >= 2
-      );
-
-  }
-
-
-  if (
-    matchesCandidates.length === 0
-  ) {
-
-    matchesCandidates =
-      results;
-
-  }
+  const matchesCandidates =
+    validMatches.length
+      ? validMatches
+      : results;
 
 
   const matches =
     [...matchesCandidates]
       .sort(
-        (a, b) => {
-
-          if (
-            b.matchScore !==
-            a.matchScore
-          ) {
-
-            return (
-              b.matchScore -
-              a.matchScore
-            );
-
-          }
-
-
-          return (
-            b.count10 -
-            a.count10
-          );
-
-        }
+        (a, b) =>
+          b.matchScore -
+          a.matchScore
       )[0];
 
 
   /*
-     DIFFERS SELECTION
+    DIFFERS
 
-     Choose strongest avoidance
-     candidate from observed data.
-
-     We prevent the exact Matches
-     digit from automatically being
-     used for Differs unless all
-     other data is tied.
+    Select highest avoidance score.
   */
 
-  let differsCandidates =
-    results.filter(
-      item =>
-        item.digit !==
-        matches.digit
-    );
-
-
-  if (
-    differsCandidates.length === 0
-  ) {
-
-    differsCandidates =
-      results;
-
-  }
-
-
   const differs =
-    [...differsCandidates]
+    [...results]
       .sort(
-        (a, b) => {
-
-          if (
-            b.differsScore !==
-            a.differsScore
-          ) {
-
-            return (
-              b.differsScore -
-              a.differsScore
-            );
-
-          }
-
-
-          return (
-            a.count10 -
-            b.count10
-          );
-
-        }
+        (a, b) =>
+          b.differsScore -
+          a.differsScore
       )[0];
 
 
@@ -1422,9 +1943,9 @@ function runStatisticalAnalysis() {
 }
 
 
-/* ==========================================
+/* =========================================================
    DISPLAY MATCHES
-========================================== */
+========================================================= */
 
 function displayMatches(data) {
 
@@ -1444,7 +1965,7 @@ function displayMatches(data) {
     "matchesRate"
   ).textContent =
     (
-      data.f10 * 100
+      data.f50 * 100
     ).toFixed(1) + "%";
 
 
@@ -1459,29 +1980,29 @@ function displayMatches(data) {
   document.getElementById(
     "matchesStatus"
   ).textContent =
-    "REAL-DATA SELECTED";
+    "STATISTICAL MATCH CANDIDATE";
 
 
   document.getElementById(
     "matchesReason"
   ).textContent =
 
-    `Digit ${data.digit} was selected from real live ticks. ` +
+    `Digit ${data.digit} ranked highest from real collected ticks using ` +
 
-    `It appeared ${data.count10} time(s) in the latest 10 ticks ` +
+    `multi-window frequency, recent momentum, transition behaviour ` +
 
-    `and ${data.appearances} time(s) in the collected dataset. ` +
+    `and historical next-10 repeat analysis. ` +
 
-    `Selection used recent frequency, multi-window frequency, ` +
+    `Historical next-10 repeat rate: ` +
 
-    `recency weighting and transition analysis.`;
+    `${(data.repeatRate * 100).toFixed(1)}%.`;
 
 }
 
 
-/* ==========================================
+/* =========================================================
    DISPLAY DIFFERS
-========================================== */
+========================================================= */
 
 function displayDiffers(data) {
 
@@ -1501,7 +2022,7 @@ function displayDiffers(data) {
     "differsRate"
   ).textContent =
     (
-      data.f10 * 100
+      data.f50 * 100
     ).toFixed(1) + "%";
 
 
@@ -1516,4 +2037,108 @@ function displayDiffers(data) {
   document.getElementById(
     "differsStatus"
   ).textContent =
-    "REAL-DATA SELECTED";
+    "STATISTICAL DIFFERS CANDIDATE";
+
+
+  document.getElementById(
+    "differsReason"
+  ).textContent =
+
+    `Digit ${data.digit} ranked strongest for avoidance using ` +
+
+    `low-frequency behaviour, current transition probability ` +
+
+    `and historical next-10 avoidance analysis. ` +
+
+    `Historical avoidance rate: ` +
+
+    `${(data.avoidanceRate * 100).toFixed(1)}%.`;
+
+}
+
+
+/* =========================================================
+   RESET RESULTS
+========================================================= */
+
+function resetResults() {
+
+  document.getElementById(
+    "matchesDigit"
+  ).textContent =
+    "-";
+
+
+  document.getElementById(
+    "differsDigit"
+  ).textContent =
+    "-";
+
+
+  document.getElementById(
+    "matchesStatus"
+  ).textContent =
+    "WAITING FOR ANALYSIS";
+
+
+  document.getElementById(
+    "differsStatus"
+  ).textContent =
+    "WAITING FOR ANALYSIS";
+
+
+  document.getElementById(
+    "matchesReason"
+  ).textContent =
+    "Collecting real market ticks...";
+
+
+  document.getElementById(
+    "differsReason"
+  ).textContent =
+    "Collecting real market ticks...";
+
+
+  document.getElementById(
+    "matchesAppearances"
+  ).textContent =
+    "-";
+
+
+  document.getElementById(
+    "matchesRate"
+  ).textContent =
+    "-";
+
+
+  document.getElementById(
+    "matchesTransition"
+  ).textContent =
+    "-";
+
+
+  document.getElementById(
+    "differsAppearances"
+  ).textContent =
+    "-";
+
+
+  document.getElementById(
+    "differsRate"
+  ).textContent =
+    "-";
+
+
+  document.getElementById(
+    "differsTransition"
+  ).textContent =
+    "-";
+
+}
+
+
+/* =========================================================
+   START CONNECTION
+========================================================= */
+
+connect();
