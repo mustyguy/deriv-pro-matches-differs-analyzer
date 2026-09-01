@@ -1,341 +1,222 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
 
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <title>Deriv Matches & Differs Analyzer</title>
 
-  <link rel="stylesheet" href="style.css" />
+  <!-- Connect CSS -->
+  <link rel="stylesheet" href="./style.css">
 </head>
 
 <body>
 
-<div class="app">
+  <div class="app">
 
-  <!-- HEADER -->
-
-  <header>
-
-    <div>
-      <h1>⚡ DIGITS PRO ANALYZER</h1>
-
-      <p>
-        REAL LIVE TICK ANALYSIS • MATCHES & DIFFERS
-      </p>
-    </div>
-
-    <div id="connectionStatus"
-         class="status disconnected">
-
-      ● CONNECTING
-
-    </div>
-
-  </header>
-
-
-  <!-- MARKET -->
-
-  <section class="panel">
-
-    <h2>SELECT DERIV VOLATILITY MARKET</h2>
-
-    <select id="marketSelect">
-
-      <option value="">
-        Loading available markets...
-      </option>
-
-    </select>
-
-    <div class="market-info">
+    <!-- HEADER -->
+    <header>
 
       <div>
-        <span>SYMBOL</span>
-        <strong id="symbolName">-</strong>
+        <h1>⚡ DIGITS PRO ANALYZER</h1>
+
+        <p>REAL LIVE TICK ANALYSIS • MATCHES & DIFFERS</p>
+      </div>
+
+      <div id="connectionStatus" class="status disconnected">
+        ● CONNECTING
+      </div>
+
+    </header>
+
+
+    <!-- MARKET SELECTION -->
+    <section class="panel">
+
+      <h2>SELECT DERIV VOLATILITY MARKET</h2>
+
+      <select id="marketSelect">
+        <option value="">Loading available markets...</option>
+      </select>
+
+      <div class="market-info">
+
+        <div>
+          <span>SYMBOL</span>
+          <strong id="symbolName">-</strong>
+        </div>
+
+        <div>
+          <span>TICKS COLLECTED</span>
+          <strong id="tickCount">0</strong>
+        </div>
+
+        <div>
+          <span>LATEST DIGIT</span>
+          <strong id="latestDigit">-</strong>
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- LIVE DIGITS -->
+    <section class="panel">
+
+      <h2>LIVE DIGIT TICKS</h2>
+
+      <div id="ticks" class="ticks">
+        Waiting for live ticks...
+      </div>
+
+    </section>
+
+
+    <!-- ANALYSIS -->
+    <section class="panel analyze-panel">
+
+      <h2>STATISTICAL DIGIT ANALYSIS</h2>
+
+      <p class="description">
+        The system analyzes real collected ticks using frequency,
+        recent frequency, transition behavior and multi-window analysis.
+      </p>
+
+      <button id="analyzeButton" class="analyze-button">
+        🔍 ANALYZE MATCHES & DIFFERS
+      </button>
+
+      <div class="progress-container">
+
+        <div class="progress-bar">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+
+        <div id="progressText" class="progress-text">
+          READY
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- RESULTS -->
+    <section class="results-grid">
+
+      <!-- MATCHES -->
+      <div class="result-card matches">
+
+        <h2>🎯 MATCHES</h2>
+
+        <div id="matchesDigit" class="result-digit">-</div>
+
+        <div id="matchesStatus" class="result-status">
+          WAITING FOR ANALYSIS
+        </div>
+
+        <p id="matchesReason">
+          Collecting live market ticks...
+        </p>
+
+        <div class="stats">
+
+          <div>
+            <span>APPEARANCES</span>
+            <strong id="matchesAppearances">-</strong>
+          </div>
+
+          <div>
+            <span>RECENT RATE</span>
+            <strong id="matchesRate">-</strong>
+          </div>
+
+          <div>
+            <span>TRANSITION</span>
+            <strong id="matchesTransition">-</strong>
+          </div>
+
+        </div>
+
+      </div>
+
+
+      <!-- DIFFERS -->
+      <div class="result-card differs">
+
+        <h2>🚫 DIFFERS</h2>
+
+        <div id="differsDigit" class="result-digit">-</div>
+
+        <div id="differsStatus" class="result-status">
+          WAITING FOR ANALYSIS
+        </div>
+
+        <p id="differsReason">
+          Collecting live market ticks...
+        </p>
+
+        <div class="stats">
+
+          <div>
+            <span>APPEARANCES</span>
+            <strong id="differsAppearances">-</strong>
+          </div>
+
+          <div>
+            <span>RECENT RATE</span>
+            <strong id="differsRate">-</strong>
+          </div>
+
+          <div>
+            <span>TRANSITION</span>
+            <strong id="differsTransition">-</strong>
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- DIGIT FREQUENCY -->
+    <section class="panel">
+
+      <h2>DIGIT FREQUENCY 0–9</h2>
+
+      <div id="frequencyGrid" class="frequency-grid"></div>
+
+    </section>
+
+
+    <!-- DATA QUALITY -->
+    <section class="panel quality">
+
+      <div>
+        <span>DATA QUALITY</span>
+        <strong id="dataQuality">COLLECTING</strong>
       </div>
 
       <div>
-        <span>TICKS COLLECTED</span>
-        <strong id="tickCount">0</strong>
+        <span>ANALYSIS WINDOW</span>
+        <strong id="analysisWindow">0 TICKS</strong>
       </div>
 
       <div>
-        <span>LATEST DIGIT</span>
-        <strong id="latestDigit">-</strong>
+        <span>ENGINE</span>
+        <strong>DETERMINISTIC</strong>
       </div>
 
-    </div>
+    </section>
 
-  </section>
+  </div>
 
 
-  <!-- LIVE TICKS -->
-
-  <section class="panel">
-
-    <h2>LIVE DIGIT TICKS</h2>
-
-    <div id="ticks"
-         class="ticks">
-
-      Waiting for live ticks...
-
-    </div>
-
-  </section>
-
-
-  <!-- ANALYZE -->
-
-  <section class="panel analyze-panel">
-
-    <h2>STATISTICAL DIGIT ANALYSIS</h2>
-
-    <p class="description">
-
-      The system analyzes collected live ticks using frequency,
-      recent frequency, transition behavior, drought and
-      multi-window scoring.
-
-    </p>
-
-
-    <button id="analyzeButton"
-            class="analyze-button">
-
-      🔍 ANALYZE MATCHES & DIFFERS
-
-    </button>
-
-
-    <!-- PROGRESS -->
-
-    <div class="progress-container">
-
-      <div class="progress-bar">
-
-        <div id="progressFill"
-             class="progress-fill">
-
-        </div>
-
-      </div>
-
-      <div id="progressText"
-           class="progress-text">
-
-        READY
-
-      </div>
-
-    </div>
-
-  </section>
-
-
-  <!-- RESULTS -->
-
-  <section class="results-grid">
-
-
-    <!-- MATCHES -->
-
-    <div class="result-card matches">
-
-      <h2>🎯 MATCHES</h2>
-
-      <div id="matchesDigit"
-           class="result-digit">
-
-        -
-
-      </div>
-
-      <div id="matchesStatus"
-           class="result-status">
-
-        WAITING FOR ANALYSIS
-
-      </div>
-
-      <p id="matchesReason">
-
-        Collecting live market ticks...
-
-      </p>
-
-
-      <div class="stats">
-
-        <div>
-
-          <span>APPEARANCES</span>
-
-          <strong id="matchesAppearances">
-            -
-          </strong>
-
-        </div>
-
-
-        <div>
-
-          <span>RECENT RATE</span>
-
-          <strong id="matchesRate">
-            -
-          </strong>
-
-        </div>
-
-
-        <div>
-
-          <span>TRANSITION</span>
-
-          <strong id="matchesTransition">
-            -
-          </strong>
-
-        </div>
-
-      </div>
-
-    </div>
-
-
-
-    <!-- DIFFERS -->
-
-    <div class="result-card differs">
-
-      <h2>🚫 DIFFERS</h2>
-
-      <div id="differsDigit"
-           class="result-digit">
-
-        -
-
-      </div>
-
-      <div id="differsStatus"
-           class="result-status">
-
-        WAITING FOR ANALYSIS
-
-      </div>
-
-      <p id="differsReason">
-
-        Collecting live market ticks...
-
-      </p>
-
-
-      <div class="stats">
-
-        <div>
-
-          <span>APPEARANCES</span>
-
-          <strong id="differsAppearances">
-            -
-          </strong>
-
-        </div>
-
-
-        <div>
-
-          <span>RECENT RATE</span>
-
-          <strong id="differsRate">
-            -
-          </strong>
-
-        </div>
-
-
-        <div>
-
-          <span>TRANSITION</span>
-
-          <strong id="differsTransition">
-            -
-          </strong>
-
-        </div>
-
-      </div>
-
-    </div>
-
-
-  </section>
-
-
-  <!-- FREQUENCY -->
-
-  <section class="panel">
-
-    <h2>DIGIT FREQUENCY 0–9</h2>
-
-    <div id="frequencyGrid"
-         class="frequency-grid">
-
-    </div>
-
-  </section>
-
-
-  <!-- DATA QUALITY -->
-
-  <section class="panel quality">
-
-    <div>
-
-      <span>DATA QUALITY</span>
-
-      <strong id="dataQuality">
-        COLLECTING
-      </strong>
-
-    </div>
-
-
-    <div>
-
-      <span>ANALYSIS WINDOW</span>
-
-      <strong id="analysisWindow">
-        0 TICKS
-      </strong>
-
-    </div>
-
-
-    <div>
-
-      <span>ENGINE</span>
-
-      <strong>
-        DETERMINISTIC
-      </strong>
-
-    </div>
-
-  </section>
-
-
-</div>
-
-
-<script src="app.js"></script>
+  <!-- Connect JavaScript -->
+  <script src="./app.js"></script>
 
 </body>
-      </html>
-      
+</html>
