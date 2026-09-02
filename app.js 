@@ -1513,12 +1513,10 @@ function updateTicks() {
 
   }
 
-
   const latest =
     tickData
       .slice(-60)
       .reverse();
-
 
   ticksElement.innerHTML =
     latest.map(item =>
