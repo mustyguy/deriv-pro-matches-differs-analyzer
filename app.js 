@@ -1062,26 +1062,397 @@ function requestHistoricalTicks() {
 function subscribeToTicks() {
 
   if (!activeSymbol) {
+    return;
+  }
+
+  console.log(
+    "SUBSCRIBING TO LIVE TICKS:",
+    activeSymbol
+  );
+
+  sendRequest({
+
+    ticks: activeSymbol,
+
+    subscribe: 1,
+
+    req_id: 2002
+
+  });
+
+}
+
+
+/* =========================================================
+   LOAD HISTORICAL TICKS
+========================================================= */
+
+function loadHistoricalTicks(history) {
+
+  if (!history) {
+
+    console.warn(
+      "No historical data received"
+    );
+
+    setProgress(
+      "NO HISTORICAL DATA RECEIVED"
+    );
 
     return;
 
   }
 
 
-  sendRequest({
+  const prices =
+    Array.isArray(history.prices)
+      ? history.prices
+      : [];
 
-    ticks:
-      activeSymbol,
 
-    subscribe:
-      1,
+  const times =
+    Array.isArray(history.times)
+      ? history.times
+      : [];
 
-    req_id:
-      2002
+
+  console.log(
+    "HISTORICAL PRICES:",
+    prices.length
+  );
+
+
+  if (!prices.length) {
+
+    setProgress(
+      "HISTORICAL TICKS EMPTY"
+    );
+
+    return;
+
+  }
+
+
+  tickData = [];
+
+
+  for (
+    let i = 0;
+    i < prices.length;
+    i++
+  ) {
+
+    const quote =
+      Number(prices[i]);
+
+
+    if (!Number.isFinite(quote)) {
+      continue;
+    }
+
+
+    const digit =
+      extractLastDigit(
+        quote,
+        activePipSize
+      );
+
+
+    if (
+      digit === null ||
+      digit === undefined
+    ) {
+
+      continue;
+
+    }
+
+
+    tickData.push({
+
+      quote: quote,
+
+      digit: digit,
+
+      epoch:
+        times[i] || null
+
+    });
+
+  }
+
+
+  /*
+    Keep only the newest MAX_TICKS.
+  */
+
+  if (
+    tickData.length >
+    MAX_TICKS
+  ) {
+
+    tickData =
+      tickData.slice(
+        -MAX_TICKS
+      );
+
+  }
+
+
+  console.log(
+    "HISTORICAL DIGITS LOADED:",
+    tickData.length
+  );
+
+
+  updateDashboard();
+
+
+  setProgress(
+    `${tickData.length} HISTORICAL TICKS LOADED — LIVE STREAM ACTIVE`
+  );
+
+}
+
+
+/* =========================================================
+   EXTRACT LAST DIGIT
+========================================================= */
+
+function extractLastDigit(
+  quote,
+  pipSize
+) {
+
+  if (
+    !Number.isFinite(
+      Number(quote)
+    )
+  ) {
+
+    return null;
+
+  }
+
+
+  /*
+    Prefer Deriv's pip_size when available.
+    This preserves the correct decimal precision.
+  */
+
+  if (
+    Number.isFinite(
+      Number(pipSize)
+    ) &&
+    Number(pipSize) > 0
+  ) {
+
+    const decimals =
+      Math.max(
+        0,
+        Math.round(
+          -Math.log10(
+            Number(pipSize)
+          )
+        )
+      );
+
+
+    const formatted =
+      Number(quote).toFixed(
+        decimals
+      );
+
+
+    const digits =
+      formatted.replace(
+        /\D/g,
+        ""
+      );
+
+
+    if (digits.length) {
+
+      return Number(
+        digits[
+          digits.length - 1
+        ]
+      );
+
+    }
+
+  }
+
+
+  /*
+    Fallback if pip_size is unavailable.
+  */
+
+  const text =
+    String(quote);
+
+
+  const cleaned =
+    text.replace(
+      /\D/g,
+      ""
+    );
+
+
+  if (!cleaned.length) {
+
+    return null;
+
+  }
+
+
+  return Number(
+    cleaned[
+      cleaned.length - 1
+    ]
+  );
+
+}
+
+
+/* =========================================================
+   PROCESS LIVE TICK
+========================================================= */
+
+function processLiveTick(tick) {
+
+  if (!tick) {
+    return;
+  }
+
+
+  /*
+    Ignore ticks belonging to
+    another market.
+  */
+
+  if (
+    tick.symbol &&
+    activeSymbol &&
+    tick.symbol !== activeSymbol
+  ) {
+
+    return;
+
+  }
+
+
+  const quote =
+    Number(
+      tick.quote
+    );
+
+
+  if (
+    !Number.isFinite(
+      quote
+    )
+  ) {
+
+    return;
+
+  }
+
+
+  /*
+    Update pip size when Deriv
+    provides it.
+  */
+
+  if (
+    tick.pip_size !== undefined &&
+    tick.pip_size !== null
+  ) {
+
+    activePipSize =
+      Number(
+        tick.pip_size
+      );
+
+  }
+
+
+  const digit =
+    extractLastDigit(
+      quote,
+      activePipSize
+    );
+
+
+  if (
+    digit === null
+  ) {
+
+    return;
+
+  }
+
+
+  /*
+    Prevent duplicate ticks.
+  */
+
+  const epoch =
+    tick.epoch || null;
+
+
+  const last =
+    tickData[
+      tickData.length - 1
+    ];
+
+
+  if (
+    last &&
+    epoch &&
+    last.epoch === epoch &&
+    last.quote === quote
+  ) {
+
+    return;
+
+  }
+
+
+  tickData.push({
+
+    quote: quote,
+
+    digit: digit,
+
+    epoch: epoch
 
   });
 
-}
+
+  /*
+    Keep the newest MAX_TICKS.
+  */
+
+  if (
+    tickData.length >
+    MAX_TICKS
+  ) {
+
+    tickData.shift();
+
+  }
+
+
+  console.log(
+    "LIVE TICK:",
+    quote,
+    "DIGIT:",
+    digit,
+    "TOTAL:",
+    tickData.length
+  );
+
 
   updateDashboard();
 
