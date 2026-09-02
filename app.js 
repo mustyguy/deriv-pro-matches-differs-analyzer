@@ -312,11 +312,13 @@ function connect() {
 
     sendRequest({
 
-      active_symbols: "brief",
+  active_symbols: "brief",
 
-      req_id: 1001
+  product_type: "basic",
 
-    });
+  req_id: 1001
+
+});
 
 
     /*
@@ -349,11 +351,13 @@ function connect() {
 
             sendRequest({
 
-              active_symbols: "brief",
+  active_symbols: "brief",
 
-              req_id: 1002
+  product_type: "basic",
 
-            });
+  req_id: 1002
+
+});
 
           }
 
